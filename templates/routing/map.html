@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuel-optimal route</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b35;
+    --ink: #e7eaf0; --muted: #98a2b3; --accent: #5b8cff; --good: #35c28a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: grid; grid-template-columns: 380px 1fr; background: var(--bg); color: var(--ink); }
+  @media (max-width: 860px) { body { grid-template-columns: 1fr; grid-template-rows: auto 60vh; } }
+
+  aside { overflow-y: auto; border-right: 1px solid var(--line); padding: 20px; }
+  h1 { font-size: 17px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+
+  form { display: grid; gap: 8px; margin-bottom: 18px; }
+  input, button { font: inherit; border-radius: 8px; border: 1px solid var(--line); padding: 9px 11px; }
+  input { background: #10131a; color: var(--ink); }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { background: var(--accent); color: #fff; border: 0; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: progress; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .card .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .card .v { font-size: 19px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .card.wide { grid-column: 1 / -1; }
+  .v.good { color: var(--good); }
+
+  ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  li { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; font-size: 13px; }
+  li .top { display: flex; justify-content: space-between; gap: 10px; }
+  li .nm { font-weight: 600; }
+  li .meta { color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  li.origin { border-color: #3a4460; }
+  .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+  .note { color: var(--muted); font-size: 11px; margin-top: 4px; font-style: italic; }
+  .err { background: #2a1417; border: 1px solid #5b2530; color: #ffb4b4; padding: 11px; border-radius: 10px; font-size: 13px; }
+  #map { height: 100%; width: 100%; background: #0b0d11; }
+  .pin { background: var(--accent); color: #fff; border-radius: 50%; width: 24px; height: 24px;
+         display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+         border: 2px solid #0f1115; }
+  .pin.origin { background: #6b7280; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Fuel-optimal route</h1>
+  <div class="sub">Cheapest way to cross the USA on a 500-mile tank at 10&nbsp;mpg.</div>
+
+  <form id="f">
+    <input id="start"  value="{{ start }}"  placeholder="Start — e.g. Los Angeles, CA" autocomplete="off">
+    <input id="finish" value="{{ finish }}" placeholder="Finish — e.g. New York, NY"  autocomplete="off">
+    <button id="go" type="submit">Plan route</button>
+  </form>
+
+  <div id="out"></div>
+</aside>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map', { zoomControl: true }).setView([39.5, -98.35], 4);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO · routing by OSRM',
+  maxZoom: 19
+}).addTo(map);
+
+let layer = L.layerGroup().addTo(map);
+const $ = id => document.getElementById(id);
+const money = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/* OSRM returns an encoded polyline; decoding it here keeps the payload ~118 KB
+   instead of the ~1.2 MB the equivalent GeoJSON would cost. */
+function decodePolyline(str, precision = 5) {
+  const factor = Math.pow(10, precision);
+  let index = 0, lat = 0, lng = 0; const out = [];
+  while (index < str.length) {
+    let shift = 0, result = 0, byte;
+    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    out.push([lat / factor, lng / factor]);
+  }
+  return out;
+}
+
+async function plan(ev) {
+  if (ev) ev.preventDefault();
+  $('go').disabled = true; $('out').innerHTML = '<div class="sub">Planning…</div>';
+  const qs = new URLSearchParams({ start: $('start').value, finish: $('finish').value });
+  let data;
+  try {
+    const r = await fetch('/api/v1/route/?' + qs, { headers: { Accept: 'application/json' } });
+    data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Request failed');
+  } catch (e) {
+    $('out').innerHTML = '<div class="err">' + e.message + '</div>';
+    $('go').disabled = false; return;
+  }
+
+  layer.clearLayers();
+  const pts = decodePolyline(data.route.geometry_polyline);
+  const line = L.polyline(pts, { color: '#5b8cff', weight: 4, opacity: .85 }).addTo(layer);
+  map.fitBounds(line.getBounds(), { padding: [30, 30] });
+
+  data.fuel_stops.forEach(s => {
+    L.marker([s.lat, s.lon], {
+      icon: L.divIcon({ className: '', html: `<div class="pin${s.is_origin_fill ? ' origin' : ''}">${s.order}</div>`, iconSize: [24, 24] })
+    }).addTo(layer).bindPopup(
+      `<b>${s.name}</b><br>${s.city}${s.state ? ', ' + s.state : ''}<br>`
+      + `$${s.price_per_gallon.toFixed(3)}/gal · ${s.gallons.toFixed(1)} gal · ${money(s.cost_usd)}<br>`
+      + `<small>mile ${s.mile_marker.toLocaleString()}</small>`
+    );
+  });
+
+  const p = data.performance;
+  $('out').innerHTML = `
+    <div class="cards">
+      <div class="card wide"><div class="k">Total fuel cost</div><div class="v good">${money(data.total_fuel_cost_usd)}</div></div>
+      <div class="card"><div class="k">Distance</div><div class="v">${data.route.distance_miles.toLocaleString()} mi</div></div>
+      <div class="card"><div class="k">Fuel stops</div><div class="v">${data.fuel_stops.length}</div></div>
+      <div class="card"><div class="k">Gallons</div><div class="v">${data.total_gallons.toFixed(1)}</div></div>
+      <div class="card"><div class="k">Drive time</div><div class="v">${data.route.duration_hours.toFixed(1)} h</div></div>
+      <div class="card wide">
+        <div class="k">Performance</div>
+        <div class="v">${p.timings_ms.total} ms</div>
+        <div class="meta" style="color:var(--muted);font-size:12px">
+          ${p.external_api_calls} external API call${p.external_api_calls === 1 ? '' : 's'}${p.route_api_cached ? ' · route served from cache' : ''}
+          · solver ${p.timings_ms.solver} ms · corridor ${p.timings_ms.corridor} ms
+        </div>
+      </div>
+    </div>
+    <ol>` + data.fuel_stops.map(s => `
+      <li class="${s.is_origin_fill ? 'origin' : ''}">
+        <div class="top">
+          <span class="nm">${s.order}. ${s.name}</span>
+          <span>${money(s.cost_usd)}</span>
+        </div>
+        <div class="meta">
+          ${s.city ? s.city + ', ' + s.state + ' · ' : ''}mile ${s.mile_marker.toLocaleString()}
+          · $${s.price_per_gallon.toFixed(3)}/gal · ${s.gallons.toFixed(1)} gal
+        </div>
+        ${s.is_origin_fill ? '<div class="badge">departure fill</div>' : ''}
+        ${s.note ? '<div class="note">' + s.note + '</div>' : ''}
+      </li>`).join('') + '</ol>';
+  $('go').disabled = false;
+}
+
+$('f').addEventListener('submit', plan);
+plan();
+</script>
+</body>
+</html>

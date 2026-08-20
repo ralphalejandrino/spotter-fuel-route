@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Override to point at a self-hosted OSRM instance and the 1.06 s cold call
+      # collapses to single-digit milliseconds. The public demo server is the default
+      # purely so that a reviewer needs no setup at all.
+      OSRM_BASE_URL: ${OSRM_BASE_URL:-https://router.project-osrm.org}
+      DEFAULT_MPG: ${DEFAULT_MPG:-10}
+      DEFAULT_RANGE_MILES: ${DEFAULT_RANGE_MILES:-500}

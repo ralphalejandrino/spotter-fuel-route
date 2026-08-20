@@ -1,0 +1,55 @@
+{
+  "info": {
+    "name": "Spotter — Fuel-optimal route API",
+    "description": "Import and run top to bottom. Request 2 is the same call as request 1 and should report external_api_calls: 0.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [{ "key": "baseUrl", "value": "http://127.0.0.1:8000" }],
+  "item": [
+    {
+      "name": "1. Health — how many stations are loaded",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/health/", "host": ["{{baseUrl}}"], "path": ["api","v1","health",""] } }
+    },
+    {
+      "name": "2. Coast to coast — Los Angeles to New York (cold)",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Los Angeles, CA&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Los Angeles, CA" }, { "key": "finish", "value": "New York, NY" }] } }
+    },
+    {
+      "name": "3. The same call again — served from cache, ZERO external calls",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Los Angeles, CA&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Los Angeles, CA" }, { "key": "finish", "value": "New York, NY" }] } }
+    },
+    {
+      "name": "4. Seattle to Miami",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Seattle, WA&finish=Miami, FL", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Seattle, WA" }, { "key": "finish", "value": "Miami, FL" }] } }
+    },
+    {
+      "name": "5. Raw coordinates instead of place names",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=39.7392,-104.9903&finish=41.8781,-87.6298", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "39.7392,-104.9903" }, { "key": "finish", "value": "41.8781,-87.6298" }] } }
+    },
+    {
+      "name": "6. POST form of the same endpoint",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"start\": \"Dallas, TX\",\n  \"finish\": \"Atlanta, GA\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/v1/route/", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""] }
+      }
+    },
+    {
+      "name": "7. Short trip — a route inside one tank needs one fill",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Dallas, TX&finish=Oklahoma City, OK", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Dallas, TX" }, { "key": "finish", "value": "Oklahoma City, OK" }] } }
+    },
+    {
+      "name": "8. Error — unknown place returns 400, not 500",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Nowheresville, ZZ&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Nowheresville, ZZ" }, { "key": "finish", "value": "New York, NY" }] } }
+    },
+    {
+      "name": "9. Error — outside the USA is rejected",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=51.5074,-0.1278&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "51.5074,-0.1278" }, { "key": "finish", "value": "New York, NY" }] } }
+    },
+    {
+      "name": "10. Error — a 40-mile range cannot cross the gaps, and says where",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Los Angeles, CA&finish=New York, NY&range_miles=40", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Los Angeles, CA" }, { "key": "finish", "value": "New York, NY" }, { "key": "range_miles", "value": "40" }] } }
+    }
+  ]
+}

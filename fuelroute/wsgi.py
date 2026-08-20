@@ -1,0 +1,21 @@
+"""
+WSGI config for fuelroute project.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.1/howto/deployment/wsgi/
+"""
+
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'fuelroute.settings')
+
+application = get_wsgi_application()
+
+# Warm the station index + gazetteer once per worker, before serving anything.
+from routing.warmup import warm  # noqa: E402
+
+warm()
