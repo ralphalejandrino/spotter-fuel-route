@@ -58,12 +58,23 @@ class StationIndex:
     other cost in the pipeline.
     """
 
+    #: The column order `load()` queries in, and the order `__init__` unpacks. One
+    #: definition, so reordering it can never silently swap `address` into `city`.
+    COLUMNS = (
+        "opis_id", "name", "address", "city", "state", "retail_price", "lat", "lon",
+    )
+
     def __init__(self, rows):
-        self.ids = np.array([r[0] for r in rows], dtype=np.int64)
-        self.lat = np.array([r[6] for r in rows], dtype=np.float64)
-        self.lon = np.array([r[7] for r in rows], dtype=np.float64)
-        self.price = np.array([r[5] for r in rows], dtype=np.float64)
-        self.meta = [(r[1], r[2], r[3], r[4]) for r in rows]  # name, address, city, state
+        # `zip(*[])` yields nothing at all, so an empty table is spelled out rather
+        # than left to raise a bare ValueError far from its cause.
+        ids, names, addresses, cities, states, prices, lats, lons = (
+            zip(*rows) if rows else ((),) * len(self.COLUMNS)
+        )
+        self.ids = np.array(ids, dtype=np.int64)
+        self.lat = np.array(lats, dtype=np.float64)
+        self.lon = np.array(lons, dtype=np.float64)
+        self.price = np.array(prices, dtype=np.float64)
+        self.meta = list(zip(names, addresses, cities, states))
 
         self.cells: dict[tuple[int, int], list[int]] = {}
         for i, (la, lo) in enumerate(zip(self.lat, self.lon)):
@@ -76,12 +87,7 @@ class StationIndex:
 
     @classmethod
     def load(cls):
-        rows = list(
-            FuelStation.objects.values_list(
-                "opis_id", "name", "address", "city", "state",
-                "retail_price", "lat", "lon",
-            )
-        )
+        rows = list(FuelStation.objects.values_list(*cls.COLUMNS))
         if not rows:
             raise RuntimeError(
                 "No fuel stations loaded. Run: python manage.py load_fuel_prices"

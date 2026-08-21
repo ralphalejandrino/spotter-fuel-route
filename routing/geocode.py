@@ -17,13 +17,12 @@ from __future__ import annotations
 import functools
 import json
 import re
-import sys
 from pathlib import Path
 
+import numpy as np
 from django.conf import settings
 
-sys.path.insert(0, str(Path(settings.BASE_DIR) / "scripts"))
-from build_gazetteer import fold, variants  # noqa: E402
+from routing.placenames import fold, variants
 
 COORD_RE = re.compile(
     r"^\s*(-?\d+(?:\.\d+)?)\s*[,/ ]\s*(-?\d+(?:\.\d+)?)\s*$"
@@ -76,8 +75,6 @@ def _tables():
 @functools.lru_cache(maxsize=1)
 def _boundary():
     """US land rings from the Census cartographic boundary file, as numpy arrays."""
-    import numpy as np
-
     raw = json.loads((Path(settings.BASE_DIR) / "data" / "us_boundary.json").read_text())
     return [
         (tuple(r["bbox"]), np.asarray(r["ring"], dtype=np.float64)) for r in raw
@@ -86,8 +83,6 @@ def _boundary():
 
 def _point_in_ring(lon: float, lat: float, ring) -> bool:
     """Standard ray-casting test, vectorised over the ring's edges."""
-    import numpy as np
-
     x, y = ring[:, 0], ring[:, 1]
     x2, y2 = np.roll(x, -1), np.roll(y, -1)
     # Edges that straddle the horizontal line through the point.

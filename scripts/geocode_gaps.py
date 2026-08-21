@@ -10,8 +10,8 @@ Rate-limited to Nominatim's 1 req/sec acceptable-use policy.
 import csv, json, sys, time, urllib.parse, urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build_gazetteer import lookup  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from routing.placenames import lookup  # noqa: E402
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 OUT = DATA / "gap_geocodes.json"

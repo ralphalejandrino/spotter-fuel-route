@@ -288,8 +288,13 @@ routing/solver.py       the greedy, the cost model, the fail-loud feasibility ch
 routing/corridor.py     grid index + spatial join + exact refinement
 routing/providers.py    RoutingProvider interface, OSRM implementation, caching
 routing/geocode.py      offline endpoint resolution
+routing/placenames.py   name-normalising rules, shared by the loader and the geocoder
+routing/presenters.py   Plan -> JSON response body
 routing/service.py      the pipeline and its timing instrumentation
 scripts/                one-off build-time geocoding (not on the request path)
+
+`scripts/` imports from `routing/`, never the reverse: the build-time tools depend on
+the application, so nothing on the request path reaches into a script directory.
 ```
 
 ## Known limits

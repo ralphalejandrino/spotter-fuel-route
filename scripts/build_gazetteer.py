@@ -11,8 +11,14 @@ entirely offline -- which keeps request-time external calls at exactly one.
 
 Run once; the output is committed so a reviewer never geocodes anything.
 """
-import csv, io, json, re, sys, zipfile
+import csv, io, json, sys, zipfile
 from pathlib import Path
+
+# The name-normalising rules are shared with the request-time geocoder and live in the
+# app, which is the direction the dependency belongs: a build script may reach into the
+# application, never the reverse.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from routing.placenames import SUFFIX, fold  # noqa: E402
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -20,23 +26,6 @@ SOURCES = [
     ("gaz.zip", "2024_Gaz_place_national.txt"),
     ("gaz_cousub.zip", "2024_Gaz_cousubs_national.txt"),
 ]
-
-# One trailing LSAD-style descriptor. Applied ADDITIVELY -- we index the raw name too --
-# because stripping destructively turns "BAY CITY" into "BAY" and loses a real match.
-SUFFIX = re.compile(
-    r"\s+(city and borough|consolidated government|unified government|"
-    r"metropolitan government|urban county government|charter township|township|"
-    r"municipality|CDP|city|town|village|borough|plantation|comunidad|"
-    r"zona urbana|gore|grant|location|reservation|district|precinct|division)$",
-    re.I,
-)
-
-ACCENTS = str.maketrans("ÁÀÂÄÃÅÉÈÊËÍÌÎÏÓÒÔÖÕÚÙÛÜÑÇ", "AAAAAAEEEEIIIIOOOOOUUUUNC")
-
-
-def fold(s: str) -> str:
-    return s.strip().upper().translate(ACCENTS)
-
 
 def add(gaz, name, state, coord):
     if name:
@@ -76,35 +65,6 @@ def build():
                 if " " in stripped:
                     add(gaz, stripped.replace(" ", ""), state, coord)
     return gaz
-
-
-def variants(city: str):
-    """Spelling variants seen between OPIS city names and Census place names."""
-    c = fold(city)
-    seen = set()
-    for v in (
-        c, c.replace(".", ""), c.replace("'", ""), c.replace("-", " "),
-        c.replace(" ", ""), c + " CITY",
-        re.sub(r"^ST\.? ", "SAINT ", c), re.sub(r"^SAINT ", "ST ", c),
-        re.sub(r"^MT\.? ", "MOUNT ", c), re.sub(r"^FT\.? ", "FORT ", c),
-        re.sub(r"^N ", "NORTH ", c), re.sub(r"^S ", "SOUTH ", c),
-        re.sub(r"^E ", "EAST ", c), re.sub(r"^W ", "WEST ", c),
-        # OPIS drops the apostrophe the Census keeps: ODONNELL -> O'DONNELL.
-        re.sub(r"^O([A-Z])", r"O'\1", c),
-    ):
-        v = v.strip()
-        if v and v not in seen:
-            seen.add(v)
-            yield v
-
-
-def lookup(gaz, city, state):
-    st = state.strip().upper()
-    for v in variants(city):
-        hit = gaz.get((v, st))
-        if hit:
-            return hit
-    return None
 
 
 if __name__ == "__main__":

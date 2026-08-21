@@ -8,6 +8,7 @@ something" proves nothing; these assert that this particular answer is the best 
 
 from django.test import SimpleTestCase
 
+from routing.presenters import plan_as_dict
 from routing.solver import Candidate, InfeasibleRoute, Plan, solve
 
 
@@ -132,7 +133,7 @@ class SolverTests(SimpleTestCase):
         self.assertEqual(first.priced_from.distance_along_route, 30.0)
         self.assertAlmostEqual(plan.total_gallons * 10.0, 100.0, places=6)
 
-        payload = plan.as_dict()["fuel_stops"][0]
+        payload = plan_as_dict(plan)["fuel_stops"][0]
         self.assertTrue(payload["is_origin_fill"])
         self.assertEqual(payload["priced_from"]["mile_marker"], 30.0)
         self.assertIn("priced at the first one that does", payload["note"])
@@ -192,7 +193,7 @@ class SolverTests(SimpleTestCase):
 
     def test_plan_serialises_with_ordered_stops(self):
         plan: Plan = solve([stn(0, 3.00), stn(400, 4.00), stn(800, 2.00)], 1000.0)
-        d = plan.as_dict()
+        d = plan_as_dict(plan)
         self.assertEqual(d["total_fuel_cost_usd"], 310.00)
         self.assertEqual([s["order"] for s in d["fuel_stops"]], [1, 2, 3])
         self.assertEqual([s["mile_marker"] for s in d["fuel_stops"]], [0.0, 400.0, 800.0])

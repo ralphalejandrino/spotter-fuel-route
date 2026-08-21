@@ -24,7 +24,6 @@ caching anyway.
 from __future__ import annotations
 
 import functools
-import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -46,7 +45,6 @@ class Route:
     geometry_polyline: str
     from_cache: bool = False
     api_calls: int = 1
-    api_ms: float = 0.0
 
 
 class RoutingProvider:
@@ -119,7 +117,6 @@ class OSRMProvider(RoutingProvider):
                 geometry_polyline=hit["geometry"],
                 from_cache=True,
                 api_calls=0,
-                api_ms=0.0,
             )
 
         url = (
@@ -141,7 +138,6 @@ class OSRMProvider(RoutingProvider):
         # acceptable") and, importantly, a retry is COUNTED -- `external_api_calls` reports
         # 2 when it happens, rather than quietly presenting a retry as a single call.
         attempts, last_exc, resp = 0, None, None
-        t0 = time.perf_counter()
         while attempts < 2:
             attempts += 1
             try:
@@ -152,7 +148,6 @@ class OSRMProvider(RoutingProvider):
                 if resp.status_code < 500:
                     break
                 last_exc = RoutingError(f"HTTP {resp.status_code}")
-        api_ms = (time.perf_counter() - t0) * 1000.0
 
         if resp is None:
             raise RoutingError(
@@ -191,7 +186,6 @@ class OSRMProvider(RoutingProvider):
             geometry_polyline=geometry,
             from_cache=False,
             api_calls=attempts,
-            api_ms=api_ms,
         )
 
 

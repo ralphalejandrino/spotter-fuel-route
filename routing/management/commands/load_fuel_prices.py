@@ -21,7 +21,6 @@ from __future__ import annotations
 import csv
 import json
 import statistics
-import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -29,9 +28,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from routing.models import FuelStation
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-from build_gazetteer import lookup  # noqa: E402
+from routing.placenames import lookup
 
 DATA = Path(__file__).resolve().parents[3] / "data"
 
@@ -115,8 +112,9 @@ class Command(BaseCommand):
             city = " ".join(first["City"].split())
             state = first["State"].strip().upper()
 
-            coord = lookup(gaz, city, state) or gaps.get(f"{city.upper()}|{state}")
-            source = "gazetteer" if lookup(gaz, city, state) else "nominatim"
+            hit = lookup(gaz, city, state)
+            coord = hit or gaps.get(f"{city.upper()}|{state}")
+            source = "gazetteer" if hit else "nominatim"
             if not coord:
                 # Never guess a location. A station placed in the wrong state could be
                 # chosen as an "optimal" stop that does not exist on the route -- far

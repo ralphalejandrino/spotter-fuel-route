@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from django.conf import settings
 
 from routing import corridor, geocode
+from routing.presenters import plan_as_dict
 from routing.providers import get_provider
 from routing.solver import solve
 
@@ -85,7 +86,7 @@ def plan_route(
             "geometry_polyline": route.geometry_polyline,
             "polyline_precision": 5,
         },
-        **plan.as_dict(),
+        **plan_as_dict(plan),
         "stations_considered": {
             "in_corridor": len(candidates),
             "after_pruning": len(pruned),

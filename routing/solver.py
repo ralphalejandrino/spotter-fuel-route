@@ -90,51 +90,6 @@ class Plan:
     total_gallons: float = 0.0
     route_miles: float = 0.0
 
-    def as_dict(self) -> dict:
-        return {
-            "total_fuel_cost_usd": round(self.total_cost, 2),
-            "total_gallons": round(self.total_gallons, 3),
-            "fuel_stops": [
-                {
-                    "order": i + 1,
-                    "station_id": s.candidate.station_id,
-                    "name": s.candidate.name,
-                    "address": s.candidate.address,
-                    "city": s.candidate.city,
-                    "state": s.candidate.state,
-                    "lat": s.candidate.lat,
-                    "lon": s.candidate.lon,
-                    "price_per_gallon": round(s.candidate.price, 4),
-                    "gallons": round(s.gallons, 3),
-                    "cost_usd": round(s.cost, 2),
-                    "mile_marker": round(s.candidate.distance_along_route, 1),
-                    "is_origin_fill": s.is_origin,
-                    **(
-                        {
-                            "priced_from": {
-                                "station_id": s.priced_from.station_id,
-                                "name": s.priced_from.name,
-                                "city": s.priced_from.city,
-                                "state": s.priced_from.state,
-                                "mile_marker": round(
-                                    s.priced_from.distance_along_route, 1
-                                ),
-                            },
-                            "note": (
-                                "Departure fill at the origin. No station in the dataset "
-                                f"lies on the corridor before mile "
-                                f"{s.priced_from.distance_along_route:.1f}, so this fill "
-                                f"is priced at the first one that does."
-                            ),
-                        }
-                        if s.priced_from is not None
-                        else {}
-                    ),
-                }
-                for i, s in enumerate(self.stops)
-            ],
-        }
-
 
 def _first_cheaper_within_range(
     stations: list[Candidate], i: int, range_miles: float
