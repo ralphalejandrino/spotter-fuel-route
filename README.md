@@ -9,7 +9,7 @@ GET /api/v1/route/?start=Los Angeles, CA&finish=New York, NY
 
 ```
 2,810.7 miles · 18 fuel stops · 281.1 gallons · $868.33
-1 external API call · 1,087 ms cold · 42 ms cached
+1 external API call · ~1.1 s cold · 23 ms cached
 ```
 
 There is also a map at `/map/?start=Los Angeles, CA&finish=New York, NY`.
@@ -72,11 +72,15 @@ Measured on this machine, Los Angeles → New York:
 
 | | cold | cached |
 |---|---:|---:|
-| geocode | 0.2 ms | 0.04 ms |
+| geocode | 0.3 ms | 0.04 ms |
 | **routing API** | **1,063 ms** | 0 ms |
-| corridor search | 23 ms | 23 ms |
+| corridor search | 23 ms | 22 ms |
 | solver | 0.25 ms | 0.2 ms |
-| **total** | **1,087 ms** | **42 ms** |
+| **total** | **~1,087 ms** | **23 ms** |
+
+Cold is dominated entirely by the one upstream call, and that call is not stable: the
+same route measured 1,063 ms, 1,652 ms and 2,780 ms across one evening against the public
+OSRM demo server. Everything this app does is the ~23 ms, cold or warm.
 
 The routing call is 98% of a cold request and there is nothing to optimise inside it —
 a bare `overview=false` round trip to the public OSRM demo server still takes 0.61 s, so
