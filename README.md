@@ -37,7 +37,7 @@ happy paths, both input formats and all three error paths. Run requests 2 and 3 
 back to watch the second one report `external_api_calls: 0`.
 
 ```bash
-python manage.py test routing         # 28 tests, no network required
+python manage.py test routing         # 41 tests, no network required
 ```
 
 ---
@@ -132,6 +132,22 @@ immediately, one exposed a real gap (an infeasibility test that passed via the w
 path — now fixed), and one turned out to be an *equivalent* mutant that cannot change any
 output. That last one is documented as such in `solver.py` rather than left looking
 untested.
+
+### "Both within the USA" is a polygon test, not a bounding box
+
+The brief requires both endpoints to be in the United States. The first implementation
+checked a latitude/longitude rectangle, which is wrong in the way rectangles are always
+wrong about countries — it accepted **Tijuana, Mexico** and planned a 1,102-mile
+international route.
+
+Containment is now an actual point-in-polygon test against the US Census cartographic
+boundary for the nation (1:5,000,000, public domain, 295 rings, built offline by
+`scripts/build_us_boundary.py`). 0.095 ms per check, no new dependency.
+
+`routing/tests/test_geocode.py` pins the hard pairs — Tijuana vs San Diego, Ciudad Juárez
+vs El Paso, and **Windsor, Ontario vs Detroit, 1.5 km apart across the river**. It also
+carries a negative control asserting that at least one *rejected* point falls inside the
+US bounding envelope, so the suite cannot be satisfied by quietly reverting to a box.
 
 ### Cost model, stated rather than assumed
 
@@ -261,6 +277,11 @@ scripts/                one-off build-time geocoding (not on the request path)
   is whatever the CSV says.
 - City-centroid geocoding places a station within a few miles of its true position. That
   is well inside the corridor tolerance but it is not a street address.
-- The public OSRM demo server has no SLA. `OSRM_BASE_URL` repoints it.
+- The public OSRM demo server has no SLA, and its latency is genuinely variable — cold
+  calls measured between 0.6 s and 2.8 s for the same route on the same night. Nothing in
+  this app changes across those runs; `OSRM_BASE_URL` repoints it at a self-hosted
+  instance if that variance matters.
+- US containment is resolved at 1:5,000,000. That is good to roughly a kilometre, which
+  is enough to separate Detroit from Windsor, but it is not a survey-grade border.
 - The route cache is in-process (`LocMemCache`). Multi-worker deployments should point
   `CACHES` at Redis so the cache is shared.

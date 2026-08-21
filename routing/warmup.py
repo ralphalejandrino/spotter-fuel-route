@@ -17,9 +17,10 @@ log = logging.getLogger(__name__)
 def warm() -> bool:
     try:
         from routing.corridor import get_index
-        from routing.geocode import _tables
+        from routing.geocode import _boundary, _tables
 
         _tables()
+        _boundary()  # 646 KB of US boundary rings; ~0.3 s to parse, once
         n = len(get_index())
     except Exception as exc:
         # A fresh checkout has no stations yet. /api/v1/health/ says so plainly, and the

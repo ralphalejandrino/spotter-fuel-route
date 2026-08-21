@@ -29,10 +29,8 @@ COORD_RE = re.compile(
     r"^\s*(-?\d+(?:\.\d+)?)\s*[,/ ]\s*(-?\d+(?:\.\d+)?)\s*$"
 )
 
-# Rough continental-US + Alaska/Hawaii envelope. The brief says both endpoints are
-# within the USA; a silent typo that puts a route in the Atlantic should be rejected,
-# not routed.
-US_BOUNDS = (18.0, 72.0, -180.0, -66.0)  # lat_min, lat_max, lon_min, lon_max
+# A cheap pre-filter only -- NOT the actual containment test. See `_in_us`.
+US_BBOX = (15.0, 72.0, -180.0, -64.0)  # lat_min, lat_max, lon_min, lon_max
 
 STATE_ABBR = {
     "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
@@ -75,9 +73,51 @@ def _tables():
     return {**gaz, **gaps}, by_name
 
 
+@functools.lru_cache(maxsize=1)
+def _boundary():
+    """US land rings from the Census cartographic boundary file, as numpy arrays."""
+    import numpy as np
+
+    raw = json.loads((Path(settings.BASE_DIR) / "data" / "us_boundary.json").read_text())
+    return [
+        (tuple(r["bbox"]), np.asarray(r["ring"], dtype=np.float64)) for r in raw
+    ]
+
+
+def _point_in_ring(lon: float, lat: float, ring) -> bool:
+    """Standard ray-casting test, vectorised over the ring's edges."""
+    import numpy as np
+
+    x, y = ring[:, 0], ring[:, 1]
+    x2, y2 = np.roll(x, -1), np.roll(y, -1)
+    # Edges that straddle the horizontal line through the point.
+    straddles = (y > lat) != (y2 > lat)
+    if not straddles.any():
+        return False
+    xs, ys, xs2, ys2 = x[straddles], y[straddles], x2[straddles], y2[straddles]
+    # Longitude at which each straddling edge crosses that line.
+    crossing_lon = xs + (lat - ys) * (xs2 - xs) / (ys2 - ys)
+    return bool(np.count_nonzero(crossing_lon > lon) % 2 == 1)
+
+
 def _in_us(lat: float, lon: float) -> bool:
-    la0, la1, lo0, lo1 = US_BOUNDS
-    return la0 <= lat <= la1 and lo0 <= lon <= lo1
+    """Is this coordinate on US land?
+
+    A latitude/longitude box cannot represent a border. The first version of this
+    function used one, and it accepted Tijuana, Mexico (32.51, -117.04) as a US location
+    -- the API then planned a 1,102-mile route from Denver to another country, which is
+    a plain failure of the brief's "both within the USA".
+
+    So: a box as a cheap reject, then an actual point-in-polygon test against the US
+    Census nation boundary (1:20,000,000, public domain, 82 rings).
+    """
+    la0, la1, lo0, lo1 = US_BBOX
+    if not (la0 <= lat <= la1 and lo0 <= lon <= lo1):
+        return False
+    for (bx0, by0, bx1, by1), ring in _boundary():
+        if bx0 <= lon <= bx1 and by0 <= lat <= by1 and _point_in_ring(lon, lat, ring):
+            return True
+    return False
 
 
 def resolve(text: str) -> tuple[float, float]:
