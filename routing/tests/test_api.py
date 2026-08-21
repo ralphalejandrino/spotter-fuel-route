@@ -235,3 +235,92 @@ class HealthTests(TestCase):
         body = self.client.get(reverse("health")).json()
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["stations_loaded"], 1)
+
+
+class ProviderRetryTests(TestCase):
+    """One retry on transport failure or 5xx -- counted, never hidden.
+
+    The public OSRM demo server timed out at 20 s during a Postman collection run,
+    surfacing as a 502. The brief allows "two or three" calls, so a single retry on
+    *failure* is within budget -- but it must be reported, not folded into a claim of
+    one call.
+    """
+
+    def setUp(self):
+        cache.clear()
+
+    @staticmethod
+    def _ok_payload():
+        lats, lons = synthetic_route()
+        return {
+            "code": "Ok",
+            "routes": [{
+                "geometry": encode_polyline(lats, lons),
+                "distance": 399 * 2.5 * 1609.344,
+                "duration": 3600.0,
+            }],
+        }
+
+    def test_a_healthy_call_is_not_retried(self):
+        from routing.providers import OSRMProvider
+
+        ok = mock.Mock(status_code=200, json=mock.Mock(return_value=self._ok_payload()))
+        with mock.patch("routing.providers.requests.get", return_value=ok) as http:
+            route = OSRMProvider().route((40.0, -100.0), (40.0, -85.0))
+        self.assertEqual(http.call_count, 1)
+        self.assertEqual(route.api_calls, 1)
+
+    def test_timeout_is_retried_once_and_the_retry_is_counted(self):
+        import requests as rq
+        from routing.providers import OSRMProvider
+
+        ok = mock.Mock(status_code=200, json=mock.Mock(return_value=self._ok_payload()))
+        with mock.patch(
+            "routing.providers.requests.get", side_effect=[rq.Timeout("slow"), ok]
+        ) as http:
+            route = OSRMProvider().route((40.0, -100.0), (40.0, -85.0))
+        self.assertEqual(http.call_count, 2)
+        self.assertEqual(route.api_calls, 2, "a retry must be reported, not hidden")
+
+    def test_server_error_is_retried_once(self):
+        from routing.providers import OSRMProvider
+
+        bad = mock.Mock(status_code=503, text="upstream busy")
+        ok = mock.Mock(status_code=200, json=mock.Mock(return_value=self._ok_payload()))
+        with mock.patch("routing.providers.requests.get", side_effect=[bad, ok]) as http:
+            route = OSRMProvider().route((40.0, -100.0), (40.0, -85.0))
+        self.assertEqual(http.call_count, 2)
+        self.assertEqual(route.api_calls, 2)
+
+    def test_a_client_error_is_NOT_retried(self):
+        """A 400 means our request was wrong; repeating it just wastes the budget."""
+        from routing.providers import OSRMProvider, RoutingError
+
+        bad = mock.Mock(status_code=400, text="bad coordinates")
+        with mock.patch("routing.providers.requests.get", return_value=bad) as http:
+            with self.assertRaises(RoutingError):
+                OSRMProvider().route((40.0, -100.0), (40.0, -85.0))
+        self.assertEqual(http.call_count, 1)
+
+    def test_two_failures_give_up_rather_than_looping(self):
+        import requests as rq
+        from routing.providers import OSRMProvider, RoutingError
+
+        with mock.patch(
+            "routing.providers.requests.get", side_effect=rq.Timeout("slow")
+        ) as http:
+            with self.assertRaises(RoutingError) as ctx:
+                OSRMProvider().route((40.0, -100.0), (40.0, -85.0))
+        self.assertEqual(http.call_count, 2, "must not retry forever")
+        self.assertIn("2 attempt", str(ctx.exception))
+
+    def test_never_exceeds_the_briefs_budget_of_three(self):
+        import requests as rq
+        from routing.providers import OSRMProvider, RoutingError
+
+        with mock.patch(
+            "routing.providers.requests.get", side_effect=rq.Timeout("slow")
+        ) as http:
+            with self.assertRaises(RoutingError):
+                OSRMProvider().route((40.0, -100.0), (40.0, -85.0))
+        self.assertLessEqual(http.call_count, 3)

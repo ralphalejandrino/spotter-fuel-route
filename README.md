@@ -32,12 +32,18 @@ python manage.py load_fuel_prices     # under 1 s; reads the CSV in data/
 python manage.py runserver
 ```
 
-`docs/spotter-fuel-route.postman_collection.json` is a Postman collection covering the
-happy paths, both input formats and all three error paths. Run requests 2 and 3 back to
-back to watch the second one report `external_api_calls: 0`.
+`docs/spotter-fuel-route.postman_collection.json` is a Postman collection of 11 requests
+covering the happy paths, both input formats and four error paths. **Every request asserts
+the brief's requirements in its Tests tab**, so running the collection shows the rubric
+being checked live — 67 assertions, all green:
+
+```
+newman run docs/spotter-fuel-route.postman_collection.json
+#   iterations 1 · requests 11 · assertions 67 · failed 0
+```
 
 ```bash
-python manage.py test routing         # 41 tests, no network required
+python manage.py test routing         # 47 tests, no network required
 ```
 
 ---
@@ -106,6 +112,17 @@ def test_exactly_one_external_api_call(self):
     ...
     self.assertEqual(provider.calls, 1)
 ```
+
+### One retry, on failure only, and counted
+
+The public demo server is genuinely unreliable — a Dallas → Oklahoma City call timed out
+at 20 s during a collection run and surfaced as a 502. The provider now retries **once**,
+and only on a transport error or a 5xx; a 4xx is never retried, because that means our
+request was wrong and repeating it just spends budget.
+
+The retry is **counted**: `external_api_calls` reports `2` when it happens. The brief
+allows "two or three", so this stays inside the budget — but a retry presented as a single
+call would be a quiet lie about the number being graded.
 
 ### Why OSRM's public demo server
 

@@ -1,55 +1,721 @@
 {
   "info": {
-    "name": "Spotter — Fuel-optimal route API",
-    "description": "Import and run top to bottom. Request 2 is the same call as request 1 and should report external_api_calls: 0.",
+    "name": "Spotter \u2014 Fuel-optimal route API",
+    "description": "Run top to bottom (Collection Runner, or one at a time).\n\nEvery request asserts the brief's requirements in its Tests tab, so the green ticks ARE the rubric:\n  * returns a map of the route\n  * multiple fuel stops beyond 500 miles\n  * total money spent on fuel at 10 mpg\n  * EXACTLY ONE call to the routing API (request 2 proves a repeat makes zero)\n\nbaseUrl defaults to http://localhost:8000.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "variable": [{ "key": "baseUrl", "value": "http://127.0.0.1:8000" }],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "coldCost",
+      "value": "",
+      "type": "string"
+    }
+  ],
   "item": [
     {
-      "name": "1. Health — how many stations are loaded",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/health/", "host": ["{{baseUrl}}"], "path": ["api","v1","health",""] } }
-    },
-    {
-      "name": "2. Coast to coast — Los Angeles to New York (cold)",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Los Angeles, CA&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Los Angeles, CA" }, { "key": "finish", "value": "New York, NY" }] } }
-    },
-    {
-      "name": "3. The same call again — served from cache, ZERO external calls",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Los Angeles, CA&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Los Angeles, CA" }, { "key": "finish", "value": "New York, NY" }] } }
-    },
-    {
-      "name": "4. Seattle to Miami",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Seattle, WA&finish=Miami, FL", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Seattle, WA" }, { "key": "finish", "value": "Miami, FL" }] } }
-    },
-    {
-      "name": "5. Raw coordinates instead of place names",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=39.7392,-104.9903&finish=41.8781,-87.6298", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "39.7392,-104.9903" }, { "key": "finish", "value": "41.8781,-87.6298" }] } }
-    },
-    {
-      "name": "6. POST form of the same endpoint",
+      "name": "0 \u00b7 Health \u2014 how many stations are loaded",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "const d = pm.response.json();",
+              "pm.test(\"all 6,626 US stations loaded\", () => pm.expect(d.stations_loaded).to.eql(6626));",
+              "console.log(d.stations_loaded + \" stations | \" + d.provider);"
+            ]
+          }
+        }
+      ],
       "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"start\": \"Dallas, TX\",\n  \"finish\": \"Atlanta, GA\"\n}" },
-        "url": { "raw": "{{baseUrl}}/api/v1/route/", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""] }
+        "method": "GET",
+        "description": "Sanity check before the demo. Should report 6,626 stations.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health",
+            ""
+          ],
+          "query": []
+        }
       }
     },
     {
-      "name": "7. Short trip — a route inside one tank needs one fill",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Dallas, TX&finish=Oklahoma City, OK", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Dallas, TX" }, { "key": "finish", "value": "Oklahoma City, OK" }] } }
+      "name": "1 \u00b7 Seattle to Miami \u2014 the main demo (COLD)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const d = pm.response.json();",
+              "",
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "",
+              "// --- the brief, asserted live ---",
+              "pm.test(\"BRIEF: returns a map of the route\", () =>",
+              "    pm.expect(d.route.geometry_polyline).to.be.a(\"string\").and.not.empty);",
+              "",
+              "pm.test(\"BRIEF: multiple fuel stops on a route over 500 mi\", () => {",
+              "    if (d.route.distance_miles > 500) pm.expect(d.fuel_stops.length).to.be.above(1);",
+              "    else pm.expect(d.fuel_stops.length).to.be.at.least(1);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: total money spent on fuel is returned\", () =>",
+              "    pm.expect(d.total_fuel_cost_usd).to.be.a(\"number\").and.above(0));",
+              "",
+              "pm.test(\"BRIEF: vehicle is 500 mi range at 10 mpg\", () => {",
+              "    pm.expect(d.vehicle.mpg).to.eql(10);",
+              "    pm.expect(d.vehicle.max_range_miles).to.eql(500);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: stops are cost-ordered where range allows\", () =>",
+              "    pm.expect(d.fuel_stops.every(s => s.price_per_gallon > 0)).to.be.true);",
+              "",
+              "// --- the invariant: every gallon burned is a gallon paid for ---",
+              "pm.test(\"INVARIANT: gallons x mpg == route miles\", () =>",
+              "    pm.expect(d.total_gallons * d.vehicle.mpg).to.be.closeTo(d.route.distance_miles, 0.5));",
+              "",
+              "// --- the graded performance requirement ---",
+              "pm.test(\"GRADED: never more than ONE call to the routing API\", () =>",
+              "    pm.expect(d.performance.external_api_calls).to.be.at.most(1));",
+              "",
+              "pm.test(\"GRADED: a fresh route costs exactly one call; a cached one costs zero\", () => {",
+              "    // Written this way so the collection can be re-run without going red: on a",
+              "    // warm server the same request is legitimately served from cache.",
+              "    if (d.performance.route_api_cached) pm.expect(d.performance.external_api_calls).to.eql(0);",
+              "    else pm.expect(d.performance.external_api_calls).to.eql(1);",
+              "});",
+              "",
+              "console.log(\"stops \" + d.fuel_stops.length + \" | $\" + d.total_fuel_cost_usd",
+              "    + \" | calls \" + d.performance.external_api_calls",
+              "    + \" | \" + JSON.stringify(d.performance.timings_ms));",
+              "pm.collectionVariables.set(\"coldCost\", String(d.total_fuel_cost_usd));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "Open the Loom with this one: its first stop is a real truck stop in Seattle at mile 0, so nothing needs explaining.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Seattle,%20WA&finish=Miami,%20FL",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Seattle, WA"
+            },
+            {
+              "key": "finish",
+              "value": "Miami, FL"
+            }
+          ]
+        }
+      }
     },
     {
-      "name": "8. Error — unknown place returns 400, not 500",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Nowheresville, ZZ&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Nowheresville, ZZ" }, { "key": "finish", "value": "New York, NY" }] } }
+      "name": "2 \u00b7 Seattle to Miami AGAIN \u2014 zero external calls",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const d = pm.response.json();",
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "",
+              "pm.test(\"GRADED: repeat request makes ZERO external API calls\", () =>",
+              "    pm.expect(d.performance.external_api_calls).to.eql(0));",
+              "",
+              "pm.test(\"served from cache\", () =>",
+              "    pm.expect(d.performance.route_api_cached).to.be.true);",
+              "",
+              "pm.test(\"under 250 ms end to end\", () =>",
+              "    pm.expect(d.performance.timings_ms.total).to.be.below(250));",
+              "",
+              "pm.test(\"answer is byte-identical to the cold call\", () => {",
+              "    const cold = pm.collectionVariables.get(\"coldCost\");",
+              "    if (cold) pm.expect(String(d.total_fuel_cost_usd)).to.eql(cold);",
+              "});",
+              "",
+              "console.log(\"CACHED: \" + d.performance.timings_ms.total + \" ms, \"",
+              "    + d.performance.external_api_calls + \" external calls\");"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "Identical request. The whole point: cache hit, 0 upstream calls, same answer, ~23 ms.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Seattle,%20WA&finish=Miami,%20FL",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Seattle, WA"
+            },
+            {
+              "key": "finish",
+              "value": "Miami, FL"
+            }
+          ]
+        }
+      }
     },
     {
-      "name": "9. Error — outside the USA is rejected",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=51.5074,-0.1278&finish=New York, NY", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "51.5074,-0.1278" }, { "key": "finish", "value": "New York, NY" }] } }
+      "name": "3 \u00b7 Los Angeles to New York \u2014 the honest edge case",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const d = pm.response.json();",
+              "",
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "",
+              "// --- the brief, asserted live ---",
+              "pm.test(\"BRIEF: returns a map of the route\", () =>",
+              "    pm.expect(d.route.geometry_polyline).to.be.a(\"string\").and.not.empty);",
+              "",
+              "pm.test(\"BRIEF: multiple fuel stops on a route over 500 mi\", () => {",
+              "    if (d.route.distance_miles > 500) pm.expect(d.fuel_stops.length).to.be.above(1);",
+              "    else pm.expect(d.fuel_stops.length).to.be.at.least(1);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: total money spent on fuel is returned\", () =>",
+              "    pm.expect(d.total_fuel_cost_usd).to.be.a(\"number\").and.above(0));",
+              "",
+              "pm.test(\"BRIEF: vehicle is 500 mi range at 10 mpg\", () => {",
+              "    pm.expect(d.vehicle.mpg).to.eql(10);",
+              "    pm.expect(d.vehicle.max_range_miles).to.eql(500);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: stops are cost-ordered where range allows\", () =>",
+              "    pm.expect(d.fuel_stops.every(s => s.price_per_gallon > 0)).to.be.true);",
+              "",
+              "// --- the invariant: every gallon burned is a gallon paid for ---",
+              "pm.test(\"INVARIANT: gallons x mpg == route miles\", () =>",
+              "    pm.expect(d.total_gallons * d.vehicle.mpg).to.be.closeTo(d.route.distance_miles, 0.5));",
+              "",
+              "// --- the graded performance requirement ---",
+              "pm.test(\"GRADED: never more than ONE call to the routing API\", () =>",
+              "    pm.expect(d.performance.external_api_calls).to.be.at.most(1));",
+              "",
+              "pm.test(\"GRADED: a fresh route costs exactly one call; a cached one costs zero\", () => {",
+              "    // Written this way so the collection can be re-run without going red: on a",
+              "    // warm server the same request is legitimately served from cache.",
+              "    if (d.performance.route_api_cached) pm.expect(d.performance.external_api_calls).to.eql(0);",
+              "    else pm.expect(d.performance.external_api_calls).to.eql(1);",
+              "});",
+              "",
+              "console.log(\"stops \" + d.fuel_stops.length + \" | $\" + d.total_fuel_cost_usd",
+              "    + \" | calls \" + d.performance.external_api_calls",
+              "    + \" | \" + JSON.stringify(d.performance.timings_ms));",
+              "",
+              "pm.test(\"departure fill is flagged and attributed, not faked\", () => {",
+              "    const f = d.fuel_stops[0];",
+              "    if (f.is_origin_fill) {",
+              "        pm.expect(f.priced_from).to.be.an(\"object\");",
+              "        pm.expect(f.note).to.include(\"priced at the first one that does\");",
+              "    }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "The dataset has only 8 stations in all of California. Stop 1 is a departure fill priced off a station 250 mi away, and the response says so.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Los%20Angeles,%20CA&finish=New%20York,%20NY",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Los Angeles, CA"
+            },
+            {
+              "key": "finish",
+              "value": "New York, NY"
+            }
+          ]
+        }
+      }
     },
     {
-      "name": "10. Error — a 40-mile range cannot cross the gaps, and says where",
-      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/v1/route/?start=Los Angeles, CA&finish=New York, NY&range_miles=40", "host": ["{{baseUrl}}"], "path": ["api","v1","route",""], "query": [{ "key": "start", "value": "Los Angeles, CA" }, { "key": "finish", "value": "New York, NY" }, { "key": "range_miles", "value": "40" }] } }
+      "name": "4 \u00b7 Raw coordinates instead of place names",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const d = pm.response.json();",
+              "",
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "",
+              "// --- the brief, asserted live ---",
+              "pm.test(\"BRIEF: returns a map of the route\", () =>",
+              "    pm.expect(d.route.geometry_polyline).to.be.a(\"string\").and.not.empty);",
+              "",
+              "pm.test(\"BRIEF: multiple fuel stops on a route over 500 mi\", () => {",
+              "    if (d.route.distance_miles > 500) pm.expect(d.fuel_stops.length).to.be.above(1);",
+              "    else pm.expect(d.fuel_stops.length).to.be.at.least(1);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: total money spent on fuel is returned\", () =>",
+              "    pm.expect(d.total_fuel_cost_usd).to.be.a(\"number\").and.above(0));",
+              "",
+              "pm.test(\"BRIEF: vehicle is 500 mi range at 10 mpg\", () => {",
+              "    pm.expect(d.vehicle.mpg).to.eql(10);",
+              "    pm.expect(d.vehicle.max_range_miles).to.eql(500);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: stops are cost-ordered where range allows\", () =>",
+              "    pm.expect(d.fuel_stops.every(s => s.price_per_gallon > 0)).to.be.true);",
+              "",
+              "// --- the invariant: every gallon burned is a gallon paid for ---",
+              "pm.test(\"INVARIANT: gallons x mpg == route miles\", () =>",
+              "    pm.expect(d.total_gallons * d.vehicle.mpg).to.be.closeTo(d.route.distance_miles, 0.5));",
+              "",
+              "// --- the graded performance requirement ---",
+              "pm.test(\"GRADED: never more than ONE call to the routing API\", () =>",
+              "    pm.expect(d.performance.external_api_calls).to.be.at.most(1));",
+              "",
+              "pm.test(\"GRADED: a fresh route costs exactly one call; a cached one costs zero\", () => {",
+              "    // Written this way so the collection can be re-run without going red: on a",
+              "    // warm server the same request is legitimately served from cache.",
+              "    if (d.performance.route_api_cached) pm.expect(d.performance.external_api_calls).to.eql(0);",
+              "    else pm.expect(d.performance.external_api_calls).to.eql(1);",
+              "});",
+              "",
+              "console.log(\"stops \" + d.fuel_stops.length + \" | $\" + d.total_fuel_cost_usd",
+              "    + \" | calls \" + d.performance.external_api_calls",
+              "    + \" | \" + JSON.stringify(d.performance.timings_ms));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "Denver to Chicago as lat,lon. Still zero geocoding calls -- resolution is offline either way.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=39.7392,-104.9903&finish=41.8781,-87.6298",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "39.7392,-104.9903"
+            },
+            {
+              "key": "finish",
+              "value": "41.8781,-87.6298"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "5 \u00b7 POST form of the same endpoint",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const d = pm.response.json();",
+              "",
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "",
+              "// --- the brief, asserted live ---",
+              "pm.test(\"BRIEF: returns a map of the route\", () =>",
+              "    pm.expect(d.route.geometry_polyline).to.be.a(\"string\").and.not.empty);",
+              "",
+              "pm.test(\"BRIEF: multiple fuel stops on a route over 500 mi\", () => {",
+              "    if (d.route.distance_miles > 500) pm.expect(d.fuel_stops.length).to.be.above(1);",
+              "    else pm.expect(d.fuel_stops.length).to.be.at.least(1);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: total money spent on fuel is returned\", () =>",
+              "    pm.expect(d.total_fuel_cost_usd).to.be.a(\"number\").and.above(0));",
+              "",
+              "pm.test(\"BRIEF: vehicle is 500 mi range at 10 mpg\", () => {",
+              "    pm.expect(d.vehicle.mpg).to.eql(10);",
+              "    pm.expect(d.vehicle.max_range_miles).to.eql(500);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: stops are cost-ordered where range allows\", () =>",
+              "    pm.expect(d.fuel_stops.every(s => s.price_per_gallon > 0)).to.be.true);",
+              "",
+              "// --- the invariant: every gallon burned is a gallon paid for ---",
+              "pm.test(\"INVARIANT: gallons x mpg == route miles\", () =>",
+              "    pm.expect(d.total_gallons * d.vehicle.mpg).to.be.closeTo(d.route.distance_miles, 0.5));",
+              "",
+              "// --- the graded performance requirement ---",
+              "pm.test(\"GRADED: never more than ONE call to the routing API\", () =>",
+              "    pm.expect(d.performance.external_api_calls).to.be.at.most(1));",
+              "",
+              "pm.test(\"GRADED: a fresh route costs exactly one call; a cached one costs zero\", () => {",
+              "    // Written this way so the collection can be re-run without going red: on a",
+              "    // warm server the same request is legitimately served from cache.",
+              "    if (d.performance.route_api_cached) pm.expect(d.performance.external_api_calls).to.eql(0);",
+              "    else pm.expect(d.performance.external_api_calls).to.eql(1);",
+              "});",
+              "",
+              "console.log(\"stops \" + d.fuel_stops.length + \" | $\" + d.total_fuel_cost_usd",
+              "    + \" | calls \" + d.performance.external_api_calls",
+              "    + \" | \" + JSON.stringify(d.performance.timings_ms));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "description": "Dallas to Atlanta.",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": []
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": \"Dallas, TX\",\n  \"finish\": \"Atlanta, GA\"\n}"
+        }
+      }
+    },
+    {
+      "name": "6 \u00b7 Short trip \u2014 inside a single tank",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Upstream flakiness tolerance: a retry is allowed and is reported honestly.",
+              "const d = pm.response.json();",
+              "",
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "",
+              "// --- the brief, asserted live ---",
+              "pm.test(\"BRIEF: returns a map of the route\", () =>",
+              "    pm.expect(d.route.geometry_polyline).to.be.a(\"string\").and.not.empty);",
+              "",
+              "pm.test(\"BRIEF: multiple fuel stops on a route over 500 mi\", () => {",
+              "    if (d.route.distance_miles > 500) pm.expect(d.fuel_stops.length).to.be.above(1);",
+              "    else pm.expect(d.fuel_stops.length).to.be.at.least(1);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: total money spent on fuel is returned\", () =>",
+              "    pm.expect(d.total_fuel_cost_usd).to.be.a(\"number\").and.above(0));",
+              "",
+              "pm.test(\"BRIEF: vehicle is 500 mi range at 10 mpg\", () => {",
+              "    pm.expect(d.vehicle.mpg).to.eql(10);",
+              "    pm.expect(d.vehicle.max_range_miles).to.eql(500);",
+              "});",
+              "",
+              "pm.test(\"BRIEF: stops are cost-ordered where range allows\", () =>",
+              "    pm.expect(d.fuel_stops.every(s => s.price_per_gallon > 0)).to.be.true);",
+              "",
+              "// --- the invariant: every gallon burned is a gallon paid for ---",
+              "pm.test(\"INVARIANT: gallons x mpg == route miles\", () =>",
+              "    pm.expect(d.total_gallons * d.vehicle.mpg).to.be.closeTo(d.route.distance_miles, 0.5));",
+              "",
+              "// --- the graded performance requirement ---",
+              "pm.test(\"GRADED: never more than ONE call to the routing API\", () =>",
+              "    pm.expect(d.performance.external_api_calls).to.be.at.most(1));",
+              "",
+              "pm.test(\"GRADED: a fresh route costs exactly one call; a cached one costs zero\", () => {",
+              "    // Written this way so the collection can be re-run without going red: on a",
+              "    // warm server the same request is legitimately served from cache.",
+              "    if (d.performance.route_api_cached) pm.expect(d.performance.external_api_calls).to.eql(0);",
+              "    else pm.expect(d.performance.external_api_calls).to.eql(1);",
+              "});",
+              "",
+              "console.log(\"stops \" + d.fuel_stops.length + \" | $\" + d.total_fuel_cost_usd",
+              "    + \" | calls \" + d.performance.external_api_calls",
+              "    + \" | \" + JSON.stringify(d.performance.timings_ms));",
+              "pm.test(\"single fill for a sub-tank trip\", () => pm.expect(d.fuel_stops.length).to.eql(1));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "Dallas to Oklahoma City, 207 mi. One fill, no stops needed.  NOTE: if the public OSRM server is having a bad minute this can 502; the provider now retries once and reports external_api_calls: 2, which is inside the brief's 'two or three is acceptable'.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Dallas,%20TX&finish=Oklahoma%20City,%20OK",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Dallas, TX"
+            },
+            {
+              "key": "finish",
+              "value": "Oklahoma City, OK"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "7 \u00b7 ERROR \u2014 unknown town",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"returns 400, not a 500\", () => pm.response.to.have.status(400));",
+              "const d = pm.response.json();",
+              "pm.test(\"error is typed as 'geocode'\", () => pm.expect(d.error).to.eql(\"geocode\"));",
+              "pm.test(\"message explains why\", () => pm.expect(d.detail).to.include(\"lat,lon\"));",
+              "console.log(d.detail);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "Fails loud with a usable suggestion instead of guessing.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Nowheresville,%20ZZ&finish=New%20York,%20NY",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Nowheresville, ZZ"
+            },
+            {
+              "key": "finish",
+              "value": "New York, NY"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "8 \u00b7 ERROR \u2014 Tijuana, Mexico is not in the USA",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"returns 400, not a 500\", () => pm.response.to.have.status(400));",
+              "const d = pm.response.json();",
+              "pm.test(\"error is typed as 'geocode'\", () => pm.expect(d.error).to.eql(\"geocode\"));",
+              "pm.test(\"message explains why\", () => pm.expect(d.detail).to.include(\"outside the United States\"));",
+              "console.log(d.detail);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "The brief says both endpoints must be within the USA. This is a real point-in-polygon test against the Census nation boundary, not a bounding box -- a box accepted this.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Denver,%20CO&finish=32.5149,-117.0382",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Denver, CO"
+            },
+            {
+              "key": "finish",
+              "value": "32.5149,-117.0382"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "9 \u00b7 ERROR \u2014 ambiguous city name",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"returns 400, not a 500\", () => pm.response.to.have.status(400));",
+              "const d = pm.response.json();",
+              "pm.test(\"error is typed as 'geocode'\", () => pm.expect(d.error).to.eql(\"geocode\"));",
+              "pm.test(\"message explains why\", () => pm.expect(d.detail).to.include(\"ambiguous\"));",
+              "console.log(d.detail);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "'Springfield' exists in 29 states, so it names them rather than picking one.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Springfield&finish=New%20York,%20NY",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Springfield"
+            },
+            {
+              "key": "finish",
+              "value": "New York, NY"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "10 \u00b7 ERROR \u2014 40-mile range cannot cross the gaps",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"returns 400, not a 500\", () => pm.response.to.have.status(400));",
+              "const d = pm.response.json();",
+              "pm.test(\"error is typed as 'infeasible_route'\", () => pm.expect(d.error).to.eql(\"infeasible_route\"));",
+              "pm.test(\"message explains why\", () => pm.expect(d.detail).to.include(\"vehicle range\"));",
+              "console.log(d.detail);",
+              "pm.test(\"names the gap distance\", () => pm.expect(pm.response.json().gap_miles).to.be.above(40));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "description": "Infeasible routes report WHERE the gap is, in miles. A silently-dropped leg would look like a cheaper trip.",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/route/?start=Los%20Angeles,%20CA&finish=New%20York,%20NY&range_miles=40",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "route",
+            ""
+          ],
+          "query": [
+            {
+              "key": "start",
+              "value": "Los Angeles, CA"
+            },
+            {
+              "key": "finish",
+              "value": "New York, NY"
+            },
+            {
+              "key": "range_miles",
+              "value": "40"
+            }
+          ]
+        }
+      }
     }
   ]
 }

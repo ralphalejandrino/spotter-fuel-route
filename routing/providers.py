@@ -126,17 +126,38 @@ class OSRMProvider(RoutingProvider):
             f"{self.base_url}/route/v1/driving/"
             f"{start[1]:.6f},{start[0]:.6f};{finish[1]:.6f},{finish[0]:.6f}"
         )
+        params = {
+            "overview": "full",
+            "geometries": "polyline",
+            "alternatives": "false",
+            "steps": "false",
+        }
+
+        # One retry, and ONLY on a transport failure or a 5xx -- never to obtain a better
+        # answer. The public demo server is genuinely flaky: a Dallas->Oklahoma City call
+        # timed out at 20 s during a collection run, which would have surfaced as a 502.
+        #
+        # This stays inside the brief's stated budget ("one call is ideal, two or three is
+        # acceptable") and, importantly, a retry is COUNTED -- `external_api_calls` reports
+        # 2 when it happens, rather than quietly presenting a retry as a single call.
+        attempts, last_exc, resp = 0, None, None
         t0 = time.perf_counter()
-        try:
-            resp = requests.get(
-                url,
-                params={"overview": "full", "geometries": "polyline", "alternatives": "false", "steps": "false"},
-                timeout=self.timeout,
-            )
-        except requests.RequestException as exc:
-            raise RoutingError(f"Routing provider unreachable: {exc}") from exc
+        while attempts < 2:
+            attempts += 1
+            try:
+                resp = requests.get(url, params=params, timeout=self.timeout)
+            except requests.RequestException as exc:
+                last_exc, resp = exc, None
+            else:
+                if resp.status_code < 500:
+                    break
+                last_exc = RoutingError(f"HTTP {resp.status_code}")
         api_ms = (time.perf_counter() - t0) * 1000.0
 
+        if resp is None:
+            raise RoutingError(
+                f"Routing provider unreachable after {attempts} attempt(s): {last_exc}"
+            ) from (last_exc if isinstance(last_exc, Exception) else None)
         if resp.status_code != 200:
             raise RoutingError(
                 f"Routing provider returned HTTP {resp.status_code}: {resp.text[:200]}"
@@ -169,7 +190,7 @@ class OSRMProvider(RoutingProvider):
             duration_seconds=r["duration"],
             geometry_polyline=geometry,
             from_cache=False,
-            api_calls=1,
+            api_calls=attempts,
             api_ms=api_ms,
         )
 

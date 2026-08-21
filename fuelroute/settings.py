@@ -141,7 +141,8 @@ DEFAULT_CORRIDOR_MILES = float(os.environ.get("DEFAULT_CORRIDOR_MILES", 10.0))
 # The one external dependency. OSRM's public demo needs no API key, which is why a
 # reviewer can clone this repo and run it with no setup at all.
 OSRM_BASE_URL = os.environ.get("OSRM_BASE_URL", "https://router.project-osrm.org")
-OSRM_TIMEOUT_SECONDS = float(os.environ.get("OSRM_TIMEOUT_SECONDS", 20))
+# Per-attempt. One retry is made on a transport error or 5xx, so worst case is 2x this.
+OSRM_TIMEOUT_SECONDS = float(os.environ.get("OSRM_TIMEOUT_SECONDS", 15))
 
 # Caching the route response is what turns a repeated request into ZERO external calls.
 ROUTE_CACHE_SECONDS = int(os.environ.get("ROUTE_CACHE_SECONDS", 60 * 60 * 24))
